@@ -16,7 +16,7 @@ services:
       interval: 5s
       retries: 10
 
-  stats-service:
+  stats-server:
     build:
       context: ./stats/stats-service
       dockerfile: Dockerfile
@@ -64,7 +64,7 @@ services:
     depends_on:
       ewm-db:
         condition: service_healthy
-      stats-service:
+      stats-server:
         condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://ewm-db:5432/main
