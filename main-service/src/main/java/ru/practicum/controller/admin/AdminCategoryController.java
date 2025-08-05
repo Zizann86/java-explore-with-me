@@ -22,4 +22,18 @@ public class AdminCategoryController {
         log.info("Получен HTTP-запрос на добавление категории: {}", newCategoryDto);
         return categoryService.save(newCategoryDto);
     }
+
+    @DeleteMapping("/{catId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteCategory(@PathVariable Long catId) {
+        log.info("Получен HTTP-запрос на удаление категории с id: {}", catId);
+        categoryService.deleteCategory(catId);
+    }
+
+    @PatchMapping("/{catId}")
+    public CategoryDto updateCategory(@PathVariable Long catId,
+                                      @RequestBody @Valid NewCategoryDto newCategoryDto) {
+        log.info("Получен HTTP-запрос на обновление категории с id: {}, body: {}", catId, newCategoryDto);
+        return categoryService.updateCategory(catId, newCategoryDto);
+    }
 }

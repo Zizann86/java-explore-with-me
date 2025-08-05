@@ -1,5 +1,6 @@
 package ru.practicum.service.user;
 
+import ru.practicum.dto.category.CategoryDto;
 import ru.practicum.dto.user.NewUserRequest;
 import ru.practicum.dto.user.UserDto;
 
