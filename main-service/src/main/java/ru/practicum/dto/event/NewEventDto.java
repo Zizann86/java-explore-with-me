@@ -40,9 +40,11 @@ public class NewEventDto {
 
     private boolean paid;
 
+    @Builder.Default
     @PositiveOrZero(message = "Лимит участников не может быть отрицательным")
     private int participantLimit = 0;
 
+    @Builder.Default
     private boolean requestModeration = true;
 
     @NotNull(message = "Заголовок обязательный")
