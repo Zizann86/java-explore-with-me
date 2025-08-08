@@ -8,6 +8,7 @@ import ru.practicum.dto.event.EventFullDto;
 import ru.practicum.service.event.EventService;
 
 
+
 @Slf4j
 @RestController
 @RequestMapping("/events")

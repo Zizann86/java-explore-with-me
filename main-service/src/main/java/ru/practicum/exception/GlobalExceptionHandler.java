@@ -66,4 +66,16 @@ public class GlobalExceptionHandler {
                 .timestamp(LocalDateTime.now().toString())
                 .build();
     }
+
+    @ExceptionHandler(ConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiError handleConflictException(ConflictException ex) {
+        return ApiError.builder()
+                .errors(List.of(ex.getMessage()))
+                .message("Ошибка валидации данных")
+                .reason("Нарушение правил бизнес-логики")
+                .status(HttpStatus.CONFLICT.name())
+                .timestamp(LocalDateTime.now().toString())
+                .build();
+    }
 }

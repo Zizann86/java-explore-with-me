@@ -19,6 +19,8 @@ import ru.practicum.dal.UserRepository;
 import ru.practicum.dto.event.EventFullDto;
 import ru.practicum.dto.event.EventShortDto;
 import ru.practicum.dto.event.NewEventDto;
+import ru.practicum.dto.event.UpdateEventAdminRequest;
+import ru.practicum.exception.ConflictException;
 import ru.practicum.exception.NotFoundException;
 import ru.practicum.exception.ValidationException;
 import ru.practicum.mapper.EventMapper;
@@ -27,14 +29,12 @@ import ru.practicum.model.Category;
 import ru.practicum.model.Event;
 import ru.practicum.model.Location;
 import ru.practicum.model.User;
+import ru.practicum.model.enums.ActionStateAdmin;
 import ru.practicum.model.enums.State;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -52,7 +52,6 @@ public class EventServiceImpl implements EventService {
     private final LocationRepository locationRepository;
 
 
-
     @Override
     public EventFullDto save(Long userId, NewEventDto newEventDto) {
         LocalDateTime createdOn = LocalDateTime.now().plusHours(2L);
@@ -66,7 +65,7 @@ public class EventServiceImpl implements EventService {
                 () -> new NotFoundException("Категории с id = " + newEventDto.getCategory() + " не существует"));
         event.setCategory(category);
         event.setInitiator(initiator);
-        event.setState(State.PUBLISHED);
+        event.setState(State.PENDING);
         event.setCreatedOn(createdOn);
         if (newEventDto.getLocation() != null) {
             Location location = locationRepository.save(LocationMapper.toFromLocationDto(newEventDto.getLocation()));
@@ -108,6 +107,62 @@ public class EventServiceImpl implements EventService {
         return EventMapper.toEventFullDto(event);
     }
 
+    public EventFullDto updateEventAdmin(Long eventId, UpdateEventAdminRequest updateEventAdminRequest) {
+        LocalDateTime validDate = LocalDateTime.now().plusHours(2L);
+        if (updateEventAdminRequest.getEventDate() != null && updateEventAdminRequest.getEventDate().isBefore(validDate)) {
+            throw new ValidationException("Дата мероприятия должна быть назначена через два часа");
+        }
+        Event oldEvent = eventRepository.findById(eventId)
+                .orElseThrow(() -> new NotFoundException("событие не найдено с идентификатором id = " + eventId));
+        if (updateEventAdminRequest.getStateAction() != null) {
+            if (updateEventAdminRequest.getStateAction() == ActionStateAdmin.REJECT_EVENT &&
+                    oldEvent.getState() == State.PUBLISHED) {
+                throw new ConflictException("Невозможно отменить опубликованное событие");
+            }
+            if (updateEventAdminRequest.getStateAction() == ActionStateAdmin.PUBLISH_EVENT &&
+                    oldEvent.getState() != State.PENDING) {
+                throw new ConflictException("Не удается опубликовать событие, не имеющее статуса ожидающего");
+            }
+            if (updateEventAdminRequest.getStateAction() == ActionStateAdmin.PUBLISH_EVENT &&
+                    oldEvent.getEventDate().minusHours(1L).isBefore(LocalDateTime.now())) {
+                throw new ConflictException("Невозможно опубликовать событие менее чем за 1 час до начала");
+            }
+        }
+        boolean hasChanges = false;
+        Event eventForUpdate = updateUniversal(oldEvent, updateEventAdminRequest);
+        if (eventForUpdate == null) {
+            eventForUpdate = oldEvent;
+        } else {
+            hasChanges = true;
+        }
+
+        LocalDateTime gotEventDate = updateEventAdminRequest.getEventDate();
+        if (gotEventDate != null) {
+            if (gotEventDate.isBefore(LocalDateTime.now().plusHours(1))) {
+                throw new ConflictException("Некорректные параметры даты.Дата начала " +
+                        "изменяемого события должна " + "быть не ранее чем за час от даты публикации.");
+            }
+            eventForUpdate.setEventDate(updateEventAdminRequest.getEventDate());
+            hasChanges = true;
+        }
+        ActionStateAdmin gotAction = updateEventAdminRequest.getStateAction();
+        if (gotAction != null) {
+            if (ActionStateAdmin.PUBLISH_EVENT.equals(gotAction)) {
+                eventForUpdate.setState(State.PUBLISHED);
+                eventForUpdate.setPublishedOn(LocalDateTime.now());
+                hasChanges = true;
+            } else if (ActionStateAdmin.REJECT_EVENT.equals(gotAction)) {
+                eventForUpdate.setState(State.CANCELED);
+                hasChanges = true;
+            }
+        }
+        Event eventAfterUpdate = null;
+        if (hasChanges) {
+            eventAfterUpdate = eventRepository.save(eventForUpdate);
+        }
+        return eventAfterUpdate != null ? EventMapper.toEventFullDto(eventAfterUpdate) : null;
+    }
+
     private void sendStat(HttpServletRequest request) {
         statsClient.saveHit(HitDto.builder()
                 .app("main-service")
@@ -115,5 +170,55 @@ public class EventServiceImpl implements EventService {
                 .ip(request.getRemoteAddr())
                 .timeStamp(LocalDateTime.now())
                 .build());
+    }
+
+    private Event updateUniversal(Event oldEvent, UpdateEventAdminRequest updateEvent) {
+        boolean hasChanges = false;
+        String gotAnnotation = updateEvent.getAnnotation();
+        if (gotAnnotation != null && !gotAnnotation.isBlank()) {
+            oldEvent.setAnnotation(gotAnnotation);
+            hasChanges = true;
+        }
+        Long gotCategory = updateEvent.getCategory();
+        if (gotCategory != null) {
+            Category category = categoryRepository.findById(gotCategory).orElseThrow(
+                    () -> new NotFoundException("Категории с id = " + gotCategory + " не существует"));
+            oldEvent.setCategory(category);
+            hasChanges = true;
+        }
+        String gotDescription = updateEvent.getDescription();
+        if (gotDescription != null && !gotDescription.isBlank()) {
+            oldEvent.setDescription(gotDescription);
+            hasChanges = true;
+        }
+        if (updateEvent.getLocation() != null) {
+            Location location = LocationMapper.toFromLocationDto(updateEvent.getLocation());
+            oldEvent.setLocation(location);
+            hasChanges = true;
+        }
+        Integer gotParticipantLimit = updateEvent.getParticipantLimit();
+        if (gotParticipantLimit != null) {
+            oldEvent.setParticipantLimit(gotParticipantLimit);
+            hasChanges = true;
+        }
+        if (updateEvent.getPaid() != null) {
+            oldEvent.setPaid(updateEvent.getPaid());
+            hasChanges = true;
+        }
+        Boolean requestModeration = updateEvent.getRequestModeration();
+        if (requestModeration != null) {
+            oldEvent.setRequestModeration(requestModeration);
+            hasChanges = true;
+        }
+        String gotTitle = updateEvent.getTitle();
+        if (gotTitle != null && !gotTitle.isBlank()) {
+            oldEvent.setTitle(gotTitle);
+            hasChanges = true;
+        }
+        if (!hasChanges) {
+
+            oldEvent = null;
+        }
+        return oldEvent;
     }
 }
