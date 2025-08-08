@@ -3,11 +3,13 @@ package ru.practicum.dal;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import ru.practicum.model.Category;
 import ru.practicum.model.Event;
 import ru.practicum.model.enums.State;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface EventRepository extends JpaRepository<Event, Long> {
 
@@ -46,4 +48,23 @@ public interface EventRepository extends JpaRepository<Event, Long> {
                                 LocalDateTime start,
                                 LocalDateTime end,
                                 Pageable pageable);
+
+    @Query("""
+            SELECT e
+            FROM Event as e
+            WHERE e.initiator.id = :userId
+            """)
+    List<Event> findByUserId(Long userId, Pageable pageable);
+
+    @Query("""
+            SELECT e
+            FROM Event as e
+            WHERE e.id = :eventId
+            AND e.initiator.id = :userId
+            """)
+    Optional<Event> findByIdAndUserId(Long eventId, Long userId);
+
+    Optional<Event> findByInitiatorIdAndId(Long userId, Long eventId);
+
+    List<Event> findByCategory(Category category);
 }

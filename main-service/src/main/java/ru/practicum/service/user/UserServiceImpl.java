@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import ru.practicum.dal.UserRepository;
 import ru.practicum.dto.user.NewUserRequest;
 import ru.practicum.dto.user.UserDto;
+import ru.practicum.exception.ConflictException;
 import ru.practicum.exception.NotFoundException;
 import ru.practicum.mapper.UserMapper;
 import ru.practicum.model.User;
@@ -24,6 +25,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserDto saveUser(NewUserRequest newUserRequest) {
+        validateEmailExists(newUserRequest.getEmail());
         User user = userRepository.save(UserMapper.toFromDto(newUserRequest));
         log.info("Пользователь успешно создан с id: {}", user.getId());
         return UserMapper.fromToDto(user);
@@ -50,5 +52,14 @@ public class UserServiceImpl implements UserService {
     private User validateUserExist(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException(String.format("Пользователь с id %d не найден.", userId)));
+    }
+
+    private void validateEmailExists(String email) {
+        List<String> emails = userRepository.findAll().stream()
+                .map(User::getEmail)
+                .toList();
+        if (emails.contains(email)) {
+            throw new ConflictException("Данная электронная почта уже занята");
+        }
     }
 }

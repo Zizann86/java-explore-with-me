@@ -56,13 +56,13 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(ValidationException.class)
-    @ResponseStatus(HttpStatus.CONFLICT)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiError handleValidationException(ValidationException ex) {
         return ApiError.builder()
                 .errors(List.of(ex.getMessage()))
                 .message("Ошибка валидации данных")
                 .reason("Нарушение правил бизнес-логики")
-                .status(HttpStatus.CONFLICT.name())
+                .status(HttpStatus.BAD_REQUEST.name())
                 .timestamp(LocalDateTime.now().toString())
                 .build();
     }

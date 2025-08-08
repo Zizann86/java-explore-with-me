@@ -7,7 +7,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.HitDto;
 import ru.practicum.StatsClient;
 import ru.practicum.StatsDto;
@@ -15,10 +14,7 @@ import ru.practicum.dal.CategoryRepository;
 import ru.practicum.dal.EventRepository;
 import ru.practicum.dal.LocationRepository;
 import ru.practicum.dal.UserRepository;
-import ru.practicum.dto.event.EventFullDto;
-import ru.practicum.dto.event.EventShortDto;
-import ru.practicum.dto.event.NewEventDto;
-import ru.practicum.dto.event.UpdateEventAdminRequest;
+import ru.practicum.dto.event.*;
 import ru.practicum.exception.ConflictException;
 import ru.practicum.exception.NotFoundException;
 import ru.practicum.exception.ValidationException;
@@ -28,6 +24,7 @@ import ru.practicum.model.Category;
 import ru.practicum.model.Event;
 import ru.practicum.model.Location;
 import ru.practicum.model.User;
+import ru.practicum.model.enums.ActionState;
 import ru.practicum.model.enums.ActionStateAdmin;
 import ru.practicum.model.enums.State;
 
@@ -167,12 +164,12 @@ public class EventServiceImpl implements EventService {
 
     @Override
     public List<EventFullDto> findEventsByAdmin(List<Long> users,
-                                             List<String> states,
-                                             List<Long> categories,
-                                             String rangeStart,
-                                             String rangeEnd,
-                                             int from,
-                                             int size) {
+                                                List<String> states,
+                                                List<Long> categories,
+                                                String rangeStart,
+                                                String rangeEnd,
+                                                int from,
+                                                int size) {
         Pageable pageable = PageRequest.of(from, size);
 
         LocalDateTime start = parseDateTime(rangeStart, null);
@@ -253,6 +250,85 @@ public class EventServiceImpl implements EventService {
                 .toList();
     }
 
+    @Override
+    public List<EventShortDto> findEvents(Long userId, int from, int size) {
+        validateUserExist(userId);
+
+        Pageable pageable = PageRequest.of(from, size);
+
+        return eventRepository.findByUserId(userId, pageable).stream()
+                .map(EventMapper::toEventShortDto)
+                .toList();
+    }
+
+    @Override
+    public EventFullDto findEvent(Long eventId, Long userId) {
+        validateUserExist(userId);
+
+        return EventMapper.toEventFullDto(
+                eventRepository.findByIdAndUserId(eventId, userId)
+                        .orElseThrow(() -> new NotFoundException("событие не найдено с id = " + eventId))
+        );
+    }
+
+    @Override
+    public EventFullDto updateEvent(Long eventId, Long userId, UpdateEventUserRequest updateEventUserRequest) {
+        LocalDateTime validDate = LocalDateTime.now().plusHours(2L);
+        if (updateEventUserRequest.getEventDate() != null && updateEventUserRequest.getEventDate().isBefore(validDate)) {
+            throw new ValidationException("Event date should be after two hours after now");
+        }
+        validateUserExist(userId);
+        Event oldEvent = eventRepository.findByInitiatorIdAndId(userId, eventId).orElseThrow(
+                () -> new NotFoundException("События с id = " + eventId + "и с пользователем с id = " + userId +
+                        " не существует"));
+        if (oldEvent.getState().equals(State.PUBLISHED)) {
+            throw new ConflictException("Статус события не может быть обновлен, так как со статусом PUBLISHED");
+        }
+        if (!oldEvent.getInitiator().getId().equals(userId)) {
+            throw new ConflictException("Пользователь с id= " + userId + " не автор события");
+        }
+        Event eventForUpdate = updateUniversal(oldEvent, updateEventUserRequest);
+        boolean hasChanges = false;
+        if (eventForUpdate == null) {
+            eventForUpdate = oldEvent;
+        } else {
+            hasChanges = true;
+        }
+        LocalDateTime newDate = updateEventUserRequest.getEventDate();
+        if (newDate != null) {
+            if (LocalDateTime.now().isBefore(newDate.plusHours(2))) {
+                throw new ConflictException("Поле должно содержать дату, которая еще не наступила.");
+            }
+            eventForUpdate.setEventDate(newDate);
+            hasChanges = true;
+        }
+        ActionState stateAction = updateEventUserRequest.getStateAction();
+        if (stateAction != null) {
+            switch (stateAction) {
+                case SEND_TO_REVIEW:
+                    eventForUpdate.setState(State.PENDING);
+                    hasChanges = true;
+                    break;
+                case CANCEL_REVIEW:
+                    eventForUpdate.setState(State.CANCELED);
+                    hasChanges = true;
+                    break;
+            }
+        }
+        Event eventAfterUpdate = null;
+        if (hasChanges) {
+            eventAfterUpdate = eventRepository.save(eventForUpdate);
+        }
+
+        return eventAfterUpdate != null ? EventMapper.toEventFullDto(eventAfterUpdate) : null;
+    }
+
+
+    private User validateUserExist(Long userId) {
+        return userRepository.findById(userId).orElseThrow(
+                () -> new NotFoundException("Пользователя с id = " + userId + " не существует"));
+    }
+
     private LocalDateTime parseDateTime(String dateTimeStr, LocalDateTime defaultIfNull) {
         if (dateTimeStr == null || dateTimeStr.isBlank()) {
             return defaultIfNull;
@@ -266,7 +342,7 @@ public class EventServiceImpl implements EventService {
 
     private String mapSortParameterToFieldName(String sort) {
         return switch (sort.toUpperCase()) {
-            case "EVENT_DATE" -> "eventDate";  // Используем имя поля из сущности
+            case "EVENT_DATE" -> "eventDate";
             case "VIEWS" -> "views";
             default -> throw new IllegalArgumentException(
                     "Недопустимый параметр сортировки. Используйте: EVENT_DATE or VIEWS"
@@ -284,7 +360,7 @@ public class EventServiceImpl implements EventService {
                 .build());
     }
 
-    private Event updateUniversal(Event oldEvent, UpdateEventAdminRequest updateEvent) {
+    private Event updateUniversal(Event oldEvent, UpdateEventRequest updateEvent) {
         boolean hasChanges = false;
         String gotAnnotation = updateEvent.getAnnotation();
         if (gotAnnotation != null && !gotAnnotation.isBlank()) {

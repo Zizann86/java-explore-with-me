@@ -5,11 +5,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import ru.practicum.dal.CategoryRepository;
+import ru.practicum.dal.EventRepository;
 import ru.practicum.dto.category.CategoryDto;
 import ru.practicum.dto.category.NewCategoryDto;
+import ru.practicum.exception.ConflictException;
 import ru.practicum.exception.NotFoundException;
 import ru.practicum.mapper.CategoryMapper;
 import ru.practicum.model.Category;
+import ru.practicum.model.Event;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -19,9 +22,14 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CategoryServiceImpl implements CategoryService {
     private final CategoryRepository categoryRepository;
+    private final EventRepository eventsRepository;
 
     @Override
     public CategoryDto save(NewCategoryDto newCategoryDto) {
+        String newName = newCategoryDto.getName();
+        if (categoryRepository.existsByNameIgnoreCase(newName)) {
+            throw new ConflictException(("Категория " + newName + " уже существует"));
+        }
         Category category = categoryRepository.save(CategoryMapper.toFromCategoryDto(newCategoryDto));
         log.info("Категория с id {} успешно создана", category.getId());
         return CategoryMapper.fromToCategoryDto(category);
@@ -29,10 +37,11 @@ public class CategoryServiceImpl implements CategoryService {
 
     @Override
     public void deleteCategory(Long catId) {
-        /*Category category = categoryRepository.findById(catId)
-                .orElseThrow(() -> new NotFoundException(String.format("Категория с id %d не найдена", catId)));*/
         Category category = validateCategoryExists(catId);
-
+        List<Event> events = eventsRepository.findByCategory(category);
+        if (!events.isEmpty()) {
+            throw new ConflictException("Не удается удалить категорию из-за использования некоторых событий");
+        }
         log.info("Категория с id {} удалена", catId);
         categoryRepository.delete(category);
     }
@@ -40,6 +49,10 @@ public class CategoryServiceImpl implements CategoryService {
     @Override
     public CategoryDto updateCategory(Long catId, NewCategoryDto newCategoryDto) {
         Category category = validateCategoryExists(catId);
+       /* String newName = newCategoryDto.getName();
+        if (categoryRepository.existsByNameIgnoreCase(newName)) {
+            throw new ConflictException(("Категория " + newName + " уже существует"));
+        }*/
         category.setName(newCategoryDto.getName());
         log.info("Категория обновлена - из: {} в: {}", category, newCategoryDto);
         return CategoryMapper.fromToCategoryDto(categoryRepository.save(category));
@@ -66,9 +79,4 @@ public class CategoryServiceImpl implements CategoryService {
                 .orElseThrow(() -> new NotFoundException(String.format("Категория с id %d не найдена", id)));
     }
 
-    /*private Category validateCategoryExists(Long catId) {
-        if (!categoryRepository.existsById(catId)) {
-            throw new NotFoundException("категория с id %d не найдена".formatted(catId));
-        } else return categoryRepository.findById(catId).orElseThrow();
-    }*/
 }
