@@ -26,7 +26,8 @@ public class Event {
     Category category;
 
     @Column(name = "confirmed_requests")
-    Long confirmedRequests;
+    @Builder.Default
+    Long confirmedRequests = 0L;;
 
     @Column(name = "created_on")
     LocalDateTime createdOn;

@@ -10,29 +10,26 @@ import org.springframework.stereotype.Service;
 import ru.practicum.HitDto;
 import ru.practicum.StatsClient;
 import ru.practicum.StatsDto;
-import ru.practicum.dal.CategoryRepository;
-import ru.practicum.dal.EventRepository;
-import ru.practicum.dal.LocationRepository;
-import ru.practicum.dal.UserRepository;
+import ru.practicum.dal.*;
 import ru.practicum.dto.event.*;
+import ru.practicum.dto.request.ParticipationRequestDto;
 import ru.practicum.exception.ConflictException;
 import ru.practicum.exception.NotFoundException;
 import ru.practicum.exception.ValidationException;
 import ru.practicum.mapper.EventMapper;
 import ru.practicum.mapper.LocationMapper;
-import ru.practicum.model.Category;
-import ru.practicum.model.Event;
-import ru.practicum.model.Location;
-import ru.practicum.model.User;
+import ru.practicum.mapper.RequestMapper;
+import ru.practicum.model.*;
 import ru.practicum.model.enums.ActionState;
 import ru.practicum.model.enums.ActionStateAdmin;
+import ru.practicum.model.enums.RequestStatus;
 import ru.practicum.model.enums.State;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -48,6 +45,8 @@ public class EventServiceImpl implements EventService {
     private final CategoryRepository categoryRepository;
 
     private final LocationRepository locationRepository;
+
+    private final RequestRepository requestRepository;
 
 
     @Override
@@ -175,16 +174,63 @@ public class EventServiceImpl implements EventService {
         LocalDateTime start = parseDateTime(rangeStart, null);
         LocalDateTime end = parseDateTime(rangeEnd, null);
 
-        if (rangeStart != null) {
-            start = LocalDateTime.parse(rangeStart, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        if (start != null && end != null && end.isBefore(start)) {
+            throw new ValidationException("Дата окончания не может быть раньше даты начала");
         }
 
-        if (rangeEnd != null) {
-            end = LocalDateTime.parse(rangeEnd, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        List<Event> events = eventRepository.findAllByFilter(
+                users,
+                states,
+                categories,
+                start,
+                end,
+                pageable
+        );
+
+        if (events.isEmpty()) {
+            return List.of();
         }
-        return eventRepository.findAllByFilter(users, states, categories, start, end, pageable).stream()
-                .map(EventMapper::toEventFullDto)
-                .toList();
+
+        Map<Long, List<Request>> confirmedRequests = requestRepository
+                .findAllByEventIdInAndStatus(
+                        events.stream().map(Event::getId).collect(Collectors.toList()),
+                        RequestStatus.CONFIRMED
+                ).stream()
+                .collect(Collectors.groupingBy(r -> r.getEvent().getId()
+                ));
+
+        List<String> uris = events.stream()
+                .map(event -> "/events/" + event.getId())
+                .collect(Collectors.toList());
+
+        String statsStart = events.stream()
+                .map(Event::getCreatedOn)
+                .filter(Objects::nonNull)
+                .min(LocalDateTime::compareTo)
+                .map(date -> date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
+                .orElse("1970-01-01 00:00:00");
+
+        List<StatsDto> stats = statsClient.getStats(
+                statsStart,
+                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+                uris,
+                false
+        );
+
+        Map<Long, Long> views = stats.stream()
+                .collect(Collectors.toMap(
+                        stat -> Long.parseLong(stat.getUri().substring(stat.getUri().lastIndexOf('/') + 1)),
+                        StatsDto::getHits
+                ));
+
+        return events.stream()
+                .map(event -> {
+                    EventFullDto dto = EventMapper.toEventFullDto(event);
+                    dto.setConfirmedRequests(confirmedRequests.getOrDefault(event.getId(), List.of()).size());
+                    dto.setViews(views.getOrDefault(event.getId(), 0L));
+                    return dto;
+                })
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -199,6 +245,7 @@ public class EventServiceImpl implements EventService {
                                                   int size,
                                                   HttpServletRequest request) {
 
+
         Pageable pageable;
         if (sort != null && !sort.isBlank()) {
             String sortField = mapSortParameterToFieldName(sort);
@@ -209,6 +256,11 @@ public class EventServiceImpl implements EventService {
 
         LocalDateTime start = parseDateTime(rangeStart, LocalDateTime.now());
         LocalDateTime end = parseDateTime(rangeEnd, null);
+
+        if (end.isBefore(start)) {
+            throw new ValidationException("Дата окончания не может быть раньше даты начала");
+        }
+
 
         sendStat(request);
 
@@ -323,6 +375,65 @@ public class EventServiceImpl implements EventService {
         return eventAfterUpdate != null ? EventMapper.toEventFullDto(eventAfterUpdate) : null;
     }
 
+    @Override
+    public EventRequestStatusUpdateResult updateRequestsStatus(Long userId,
+                                                               Long eventId,
+                                                               EventRequestStatusUpdateRequest request) {
+        User user = validateUserExist(userId);
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new NotFoundException("Событие не найдено с id = " + eventId));
+        if (!event.getInitiator().equals(user))
+            throw new ValidationException("Пользователь с id = " + userId + " не является инициатором события с id = " + eventId);
+        Collection<Request> requests = requestRepository.findAllByEventId_IdAndIdIn(eventId,
+                request.getRequestIds());
+        int limit = event.getParticipantLimit() - event.getConfirmedRequests().intValue();
+        int confirmed = event.getConfirmedRequests().intValue();
+        if (limit == 0)
+            throw new ConflictException("Достигнут лимит");
+        for (Request req : requests) {
+            if (!req.getStatus().equals(RequestStatus.PENDING))
+                throw new ConflictException("Status of the request with id = " + req.getId() + " is " + req.getStatus());
+            if (request.getStatus().equals(RequestStatus.REJECTED)) {
+                req.setStatus(RequestStatus.REJECTED);
+            } else if (event.getParticipantLimit() == 0 || !event.getRequestModeration()) {
+                req.setStatus(RequestStatus.CONFIRMED);
+                confirmed++;
+            } else if (limit == 0) {
+                req.setStatus(RequestStatus.REJECTED);
+            } else {
+                req.setStatus(RequestStatus.CONFIRMED);
+                limit--;
+            }
+            requestRepository.save(req);
+        }
+        if (event.getParticipantLimit() != 0)
+            event.setConfirmedRequests((long) event.getParticipantLimit() - limit);
+        else
+            event.setConfirmedRequests((long) confirmed);
+        eventRepository.save(event);
+        EventRequestStatusUpdateResult result = new EventRequestStatusUpdateResult();
+        result.setConfirmedRequests(requestRepository.findAllByEventId_IdAndStatusAndIdIn(eventId,
+                        RequestStatus.CONFIRMED,
+                        request.getRequestIds()).stream()
+                .map(RequestMapper::toParticipationRequestDto)
+                .toList());
+        result.setRejectedRequests(requestRepository.findAllByEventId_IdAndStatusAndIdIn(eventId,
+                        RequestStatus.REJECTED,
+                        request.getRequestIds()).stream()
+                .map(RequestMapper::toParticipationRequestDto)
+                .toList());
+        return result;
+    }
+
+    @Override
+    public Collection<ParticipationRequestDto> findAllRequestsByEventId(Long userId, Long eventId) {
+        validateUserExist(userId);
+        Collection<ParticipationRequestDto> result = new ArrayList<>();
+        result = requestRepository.findAllByEventId_Id(eventId).stream()
+                .map(RequestMapper::toParticipationRequestDto)
+                .toList();
+        return result;
+    }
 
     private User validateUserExist(Long userId) {
         return userRepository.findById(userId).orElseThrow(

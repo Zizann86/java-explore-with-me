@@ -49,12 +49,22 @@ public class CategoryServiceImpl implements CategoryService {
     @Override
     public CategoryDto updateCategory(Long catId, NewCategoryDto newCategoryDto) {
         Category category = validateCategoryExists(catId);
-       /* String newName = newCategoryDto.getName();
-        if (categoryRepository.existsByNameIgnoreCase(newName)) {
-            throw new ConflictException(("Категория " + newName + " уже существует"));
-        }*/
-        category.setName(newCategoryDto.getName());
-        log.info("Категория обновлена - из: {} в: {}", category, newCategoryDto);
+        String newName = newCategoryDto.getName();
+        String currentName = category.getName();
+
+        // Если имя не изменилось - просто возвращаем текущую категорию (200 OK)
+        if (newName.equals(currentName)) {
+            return CategoryMapper.fromToCategoryDto(category);
+        }
+
+        // Проверяем, существует ли категория с таким именем (исключая текущую)
+        if (categoryRepository.existsByNameIgnoreCaseAndIdNot(newName, catId)) {
+            throw new ConflictException("Категория " + newName + " уже существует");
+        }
+
+        // Изменяем имя и сохраняем
+        category.setName(newName);
+        log.info("Категория обновлена - из: {} в: {}", currentName, newName);
         return CategoryMapper.fromToCategoryDto(categoryRepository.save(category));
     }
 
