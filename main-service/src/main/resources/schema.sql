@@ -47,3 +47,19 @@ CREATE TABLE IF NOT EXISTS requests
     CONSTRAINT fk_requests_to_event FOREIGN KEY (event_id) REFERENCES events (id),
     CONSTRAINT fk_requests_to_user FOREIGN KEY (requester_id) REFERENCES users (id)
 );
+
+CREATE TABLE IF NOT EXISTS compilations
+(
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY UNIQUE,
+    pinned BOOLEAN      NOT NULL,
+    title  VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS compilations_event
+(
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    event_id BIGINT NOT NULL,
+    compilation_id BIGINT NOT NULL,
+    CONSTRAINT fk_event_compilation_to_event FOREIGN KEY (event_id) REFERENCES events (id) ON UPDATE CASCADE,
+    CONSTRAINT fk_event_compilation_to_compilation FOREIGN KEY (compilation_id) REFERENCES compilations (id) ON UPDATE CASCADE
+);
