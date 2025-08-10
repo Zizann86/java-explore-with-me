@@ -50,8 +50,10 @@ public class EventMapper {
                 .requestModeration(event.getRequestModeration())
                 .state(event.getState())
                 .title(event.getTitle())
-                .confirmedRequests(0)
-                .views(0L)
+                .confirmedRequests(event.getConfirmedRequests())
+                //.confirmedRequests(event.getConfirmedRequests() != null ? event.getConfirmedRequests() : 0)
+                //.views(event.getViews() != null ? event.getViews() : 0L)
+                .views(event.getViews())
                 .build();
     }
 }

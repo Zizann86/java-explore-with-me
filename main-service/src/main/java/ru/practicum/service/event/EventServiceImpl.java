@@ -7,6 +7,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.HitDto;
 import ru.practicum.StatsClient;
 import ru.practicum.StatsDto;
@@ -77,6 +78,7 @@ public class EventServiceImpl implements EventService {
         return eventFullDto;
     }
 
+    @Transactional
     @Override
     public EventFullDto getEventById(Long eventId, HttpServletRequest request) {
         Event event = eventRepository.findById(eventId)
@@ -96,11 +98,14 @@ public class EventServiceImpl implements EventService {
                 List.of(request.getRequestURI()),
                 true);
 
-        if (!views.isEmpty()) {
-            event.setViews(views.get(0).getHits());
-            eventRepository.save(event);
+        long newViews;
+        if (views.isEmpty()) {
+            newViews = 1L;
+        } else {
+            newViews = views.get(0).getHits();
         }
-        log.info("Событие с id {} успешно найдено:", eventId);
+        event.setViews(newViews);
+        eventRepository.save(event);
         return EventMapper.toEventFullDto(event);
     }
 
@@ -257,7 +262,7 @@ public class EventServiceImpl implements EventService {
         LocalDateTime start = parseDateTime(rangeStart, LocalDateTime.now());
         LocalDateTime end = parseDateTime(rangeEnd, null);
 
-        if (end.isBefore(start)) {
+        if (end != null && end.isBefore(start)) {
             throw new ValidationException("Дата окончания не может быть раньше даты начала");
         }
 
@@ -289,7 +294,7 @@ public class EventServiceImpl implements EventService {
                     events.stream()
                             .filter(e -> e.getId().equals(eventId))
                             .findFirst()
-                            .ifPresent(e -> e.setViews(stats.getHits()));
+                            .ifPresent(e -> e.setViews(stats.getHits() + 1));
                 }
             } catch (Exception e) {
                 log.warn("Не удалось обработать URI: {}", uri);
@@ -407,9 +412,9 @@ public class EventServiceImpl implements EventService {
             requestRepository.save(req);
         }
         if (event.getParticipantLimit() != 0)
-            event.setConfirmedRequests((long) event.getParticipantLimit() - limit);
+            event.setConfirmedRequests(event.getParticipantLimit() - limit);
         else
-            event.setConfirmedRequests((long) confirmed);
+            event.setConfirmedRequests(confirmed);
         eventRepository.save(event);
         EventRequestStatusUpdateResult result = new EventRequestStatusUpdateResult();
         result.setConfirmedRequests(requestRepository.findAllByEventId_IdAndStatusAndIdIn(eventId,

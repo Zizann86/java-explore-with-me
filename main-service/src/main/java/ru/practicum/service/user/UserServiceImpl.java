@@ -47,8 +47,6 @@ public class UserServiceImpl implements UserService {
         log.info("Пользователь с id: {} успешно удален", id);
     }
 
-
-
     private User validateUserExist(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException(String.format("Пользователь с id %d не найден.", userId)));

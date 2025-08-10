@@ -27,7 +27,7 @@ public class Event {
 
     @Column(name = "confirmed_requests")
     @Builder.Default
-    Long confirmedRequests = 0L;;
+    Integer confirmedRequests = 0;
 
     @Column(name = "created_on")
     LocalDateTime createdOn;

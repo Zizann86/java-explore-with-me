@@ -30,6 +30,12 @@ public class RequestServiceImpl implements RequestService {
 
     @Override
     public ParticipationRequestDto addRequest(Long userId, Long eventId) {
+        if (requestRepository.findByRequesterIdAndEventId(userId, eventId).isPresent()) {
+            throw new ConflictException(String.format(
+                    "Запрос от пользователя с id = %d на событие с id = %d уже существует",
+                    userId, eventId
+            ));
+        }
         User user = validateUserExist(userId);
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new NotFoundException("Событие с id= " + eventId + " не найдено"));
@@ -38,24 +44,24 @@ public class RequestServiceImpl implements RequestService {
             throw new ConflictException("Инициатор события не может отправить запрос");
         if (event.getState() != State.PUBLISHED)
             throw new ConflictException("Событие не опубликовано");
-        if ((event.getParticipantLimit() != 0) && (event.getParticipantLimit() <= event.getConfirmedRequests()))
+        if (event.getParticipantLimit() != 0 &&
+                event.getConfirmedRequests() != null &&
+                event.getParticipantLimit() <= event.getConfirmedRequests()) {
             throw new ConflictException("Превышен лимит участников");
+        }
         Request request = new Request();
         request.setCreated(createdOn);
         request.setRequester(user);
         request.setEvent(event);
-        if (event.getRequestModeration()) {
+
+        if (event.getParticipantLimit() != 0 && event.getRequestModeration()) {
             request.setStatus(RequestStatus.PENDING);
         } else {
             request.setStatus(RequestStatus.CONFIRMED);
+            event.setConfirmedRequests(event.getConfirmedRequests() + 1);
+            eventRepository.save(event);
         }
-
-        requestRepository.save(request);
-
-        if (event.getParticipantLimit() == 0) {
-            request.setStatus(RequestStatus.CONFIRMED);
-        }
-        return RequestMapper.toParticipationRequestDto(request);
+        return RequestMapper.toParticipationRequestDto(requestRepository.save(request));
     }
 
     @Override
