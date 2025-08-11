@@ -29,4 +29,10 @@ public class PublicCompilationController {
         log.info("Получен HTTP-запрос на получение всех подборк событий");
         return compilationService.getAllCompilations(pinned, from, size);
     }
+
+    @GetMapping("/{compId}")
+    public CompilationDto getCompilation(@PathVariable Long compId) {
+        log.info("Получен HTTP-запрос на получение подборки событий с id {}", compId);
+        return compilationService.getByIdCompilation(compId);
+    }
 }
