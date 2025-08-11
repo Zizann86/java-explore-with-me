@@ -28,7 +28,7 @@ public class AdminCompilationController {
     @DeleteMapping("/{compId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteCompilation(@PathVariable Long compId) {
-        log.info("Получен HTTP-запрос на удаление подборки событий с id {}" , compId);
+        log.info("Получен HTTP-запрос на удаление подборки событий с id {}", compId);
         compilationService.deleteCompilation(compId);
     }
 
