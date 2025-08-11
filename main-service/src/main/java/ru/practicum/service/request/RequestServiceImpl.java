@@ -40,7 +40,7 @@ public class RequestServiceImpl implements RequestService {
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new NotFoundException("Событие с id= " + eventId + " не найдено"));
         LocalDateTime createdOn = LocalDateTime.now();
-        if (event.getInitiator().getId() == userId)
+        if (event.getInitiator().getId().equals(userId))
             throw new ConflictException("Инициатор события не может отправить запрос");
         if (event.getState() != State.PUBLISHED)
             throw new ConflictException("Событие не опубликовано");
