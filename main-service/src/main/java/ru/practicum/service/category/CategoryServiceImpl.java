@@ -52,17 +52,14 @@ public class CategoryServiceImpl implements CategoryService {
         String newName = newCategoryDto.getName();
         String currentName = category.getName();
 
-        // Если имя не изменилось - просто возвращаем текущую категорию (200 OK)
         if (newName.equals(currentName)) {
             return CategoryMapper.fromToCategoryDto(category);
         }
 
-        // Проверяем, существует ли категория с таким именем (исключая текущую)
         if (categoryRepository.existsByNameIgnoreCaseAndIdNot(newName, catId)) {
             throw new ConflictException("Категория " + newName + " уже существует");
         }
 
-        // Изменяем имя и сохраняем
         category.setName(newName);
         log.info("Категория обновлена - из: {} в: {}", currentName, newName);
         return CategoryMapper.fromToCategoryDto(categoryRepository.save(category));

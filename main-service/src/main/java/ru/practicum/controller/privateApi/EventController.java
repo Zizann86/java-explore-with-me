@@ -44,7 +44,7 @@ public class EventController {
 
     @PatchMapping("/{userId}/events/{eventId}")
     @ResponseStatus(HttpStatus.OK)
-    public EventFullDto getEvent(@PathVariable Long userId,
+    public EventFullDto updateEvent(@PathVariable Long userId,
                              @PathVariable Long eventId,
                              @RequestBody @Valid UpdateEventUserRequest updateEventUserRequest) {
         log.info("Получен HTTP-запрос на обновление события {} для пользователя {} с body {}", eventId, userId, updateEventUserRequest);

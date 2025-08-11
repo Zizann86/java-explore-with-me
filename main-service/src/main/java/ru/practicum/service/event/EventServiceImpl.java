@@ -27,7 +27,6 @@ import ru.practicum.model.enums.RequestStatus;
 import ru.practicum.model.enums.State;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -53,11 +52,8 @@ public class EventServiceImpl implements EventService {
     @Override
     public EventFullDto save(Long userId, NewEventDto newEventDto) {
         LocalDateTime createdOn = LocalDateTime.now().plusHours(2L);
-        if (newEventDto.getEventDate() != null && newEventDto.getEventDate().isBefore(createdOn)) {
-            throw new ValidationException("Дата события должна быть назначена через два часа");
-        }
-        User initiator = userRepository.findById(userId)
-                .orElseThrow(() -> new NotFoundException(String.format("Пользователь с id %d не найден.", userId)));
+        validateEventDate(newEventDto.getEventDate(), LocalDateTime.now().plusHours(2L));
+        User initiator = validateUserExist(userId);
         Event event = EventMapper.toEvent(newEventDto);
         Category category = categoryRepository.findById(newEventDto.getCategory()).orElseThrow(
                 () -> new NotFoundException("Категории с id = " + newEventDto.getCategory() + " не существует"));
@@ -81,42 +77,19 @@ public class EventServiceImpl implements EventService {
     @Transactional
     @Override
     public EventFullDto getEventById(Long eventId, HttpServletRequest request) {
-        Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new NotFoundException("События с id = " + eventId + " не существует"));
+        Event event = validateEventExist(eventId);
         if (!event.getState().equals(State.PUBLISHED)) {
             throw new NotFoundException("Событие с id = " + eventId + " не опубликовано");
         }
-        sendStat(request);
-
-        LocalDateTime statsStartDate = event.getPublishedOn();
-        if (statsStartDate == null) {
-            statsStartDate = event.getCreatedOn();
-        }
-        List<StatsDto> views = statsClient.getStats(
-                statsStartDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
-                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
-                List.of(request.getRequestURI()),
-                true);
-
-        long newViews;
-        if (views.isEmpty()) {
-            newViews = 1L;
-        } else {
-            newViews = views.get(0).getHits();
-        }
-        event.setViews(newViews);
-        eventRepository.save(event);
+        updateEventViews(event, request);
         return EventMapper.toEventFullDto(event);
     }
 
     @Override
     public EventFullDto updateEventAdmin(Long eventId, UpdateEventAdminRequest updateEventAdminRequest) {
         LocalDateTime validDate = LocalDateTime.now().plusHours(2L);
-        if (updateEventAdminRequest.getEventDate() != null && updateEventAdminRequest.getEventDate().isBefore(validDate)) {
-            throw new ValidationException("Дата мероприятия должна быть назначена через два часа");
-        }
-        Event oldEvent = eventRepository.findById(eventId)
-                .orElseThrow(() -> new NotFoundException("событие не найдено с идентификатором id = " + eventId));
+        validateEventDate(updateEventAdminRequest.getEventDate(), validDate);
+        Event oldEvent = validateEventExist(eventId);
         if (updateEventAdminRequest.getStateAction() != null) {
             if (updateEventAdminRequest.getStateAction() == ActionStateAdmin.REJECT_EVENT &&
                     oldEvent.getState() == State.PUBLISHED) {
@@ -141,10 +114,7 @@ public class EventServiceImpl implements EventService {
 
         LocalDateTime gotEventDate = updateEventAdminRequest.getEventDate();
         if (gotEventDate != null) {
-            if (gotEventDate.isBefore(LocalDateTime.now().plusHours(1))) {
-                throw new ConflictException("Некорректные параметры даты.Дата начала " +
-                        "изменяемого события должна " + "быть не ранее чем за час от даты публикации.");
-            }
+            validateEventDate(gotEventDate, LocalDateTime.now().plusHours(1));
             eventForUpdate.setEventDate(updateEventAdminRequest.getEventDate());
             hasChanges = true;
         }
@@ -174,7 +144,8 @@ public class EventServiceImpl implements EventService {
                                                 String rangeEnd,
                                                 int from,
                                                 int size) {
-        Pageable pageable = PageRequest.of(from, size);
+
+        Pageable pageable = createPageable(from, size, null);
 
         LocalDateTime start = parseDateTime(rangeStart, null);
         LocalDateTime end = parseDateTime(rangeEnd, null);
@@ -212,12 +183,12 @@ public class EventServiceImpl implements EventService {
                 .map(Event::getCreatedOn)
                 .filter(Objects::nonNull)
                 .min(LocalDateTime::compareTo)
-                .map(date -> date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
+                .map(date -> date.format(Constants.DATE_TIME_FORMATTER))
                 .orElse("1970-01-01 00:00:00");
 
         List<StatsDto> stats = statsClient.getStats(
                 statsStart,
-                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+                LocalDateTime.now().format(Constants.DATE_TIME_FORMATTER),
                 uris,
                 false
         );
@@ -251,67 +222,33 @@ public class EventServiceImpl implements EventService {
                                                   HttpServletRequest request) {
 
 
-        Pageable pageable;
-        if (sort != null && !sort.isBlank()) {
-            String sortField = mapSortParameterToFieldName(sort);
-            pageable = PageRequest.of(from, size, Sort.by(sortField).descending());
-        } else {
-            pageable = PageRequest.of(from, size);
-        }
-
+        Pageable pageable = createPageable(from, size, sort);
         LocalDateTime start = parseDateTime(rangeStart, LocalDateTime.now());
         LocalDateTime end = parseDateTime(rangeEnd, null);
 
         if (end != null && end.isBefore(start)) {
             throw new ValidationException("Дата окончания не может быть раньше даты начала");
         }
-
-
         sendStat(request);
-
-        List<Event> events = eventRepository.findAllByPublic(text, categories, paid, start, end, onlyAvailable,
-                State.PUBLISHED, pageable);
-        List<String> uris = events.stream()
-                .map(x -> "/event/" + x.getId())
-                .toList();
-
-        String startStatsDate = events.stream()
-                .map(Event::getPublishedOn)
-                .filter(Objects::nonNull)
-                .min(LocalDateTime::compareTo)
-                .map(date -> date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
-                .orElse("1970-01-01 00:00:00");
-        String endStatsDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-
-        List<StatsDto> statViews = statsClient.getStats(startStatsDate, endStatsDate, uris, false);
-
-        statViews.forEach(stats -> {
-            String uri = stats.getUri();
-            try {
-                if (uri.matches(".*\\d+$")) {
-                    String lastPart = uri.substring(uri.lastIndexOf('/') + 1);
-                    Long eventId = Long.parseLong(lastPart);
-                    events.stream()
-                            .filter(e -> e.getId().equals(eventId))
-                            .findFirst()
-                            .ifPresent(e -> e.setViews(stats.getHits() + 1));
-                }
-            } catch (Exception e) {
-                log.warn("Не удалось обработать URI: {}", uri);
-            }
-        });
-
-        eventRepository.saveAll(events);
-        return events.stream()
-                .map(EventMapper::toEventShortDto)
-                .toList();
+        List<Event> events = eventRepository.findAllByPublic(
+                text, categories, paid, start, end, onlyAvailable,
+                State.PUBLISHED, pageable
+        );
+        for (Event event : events) {
+            updateEventViews(event, request);
+        }
+        List<EventShortDto> result = new ArrayList<>();
+        for (Event event : events) {
+            result.add(EventMapper.toEventShortDto(event));
+        }
+        return result;
     }
 
     @Override
     public List<EventShortDto> findEvents(Long userId, int from, int size) {
         validateUserExist(userId);
 
-        Pageable pageable = PageRequest.of(from, size);
+        Pageable pageable = createPageable(from, size, null);
 
         return eventRepository.findByUserId(userId, pageable).stream()
                 .map(EventMapper::toEventShortDto)
@@ -321,19 +258,14 @@ public class EventServiceImpl implements EventService {
     @Override
     public EventFullDto findEvent(Long eventId, Long userId) {
         validateUserExist(userId);
-
-        return EventMapper.toEventFullDto(
-                eventRepository.findByIdAndUserId(eventId, userId)
-                        .orElseThrow(() -> new NotFoundException("событие не найдено с id = " + eventId))
-        );
+        Event event = validateEventExist(eventId);
+        return EventMapper.toEventFullDto(event);
     }
 
     @Override
     public EventFullDto updateEvent(Long eventId, Long userId, UpdateEventUserRequest updateEventUserRequest) {
         LocalDateTime validDate = LocalDateTime.now().plusHours(2L);
-        if (updateEventUserRequest.getEventDate() != null && updateEventUserRequest.getEventDate().isBefore(validDate)) {
-            throw new ValidationException("Event date should be after two hours after now");
-        }
+        validateEventDate(updateEventUserRequest.getEventDate(), validDate);
         validateUserExist(userId);
         Event oldEvent = eventRepository.findByInitiatorIdAndId(userId, eventId).orElseThrow(
                 () -> new NotFoundException("События с id = " + eventId + "и с пользователем с id = " + userId +
@@ -385,8 +317,7 @@ public class EventServiceImpl implements EventService {
                                                                Long eventId,
                                                                EventRequestStatusUpdateRequest request) {
         User user = validateUserExist(userId);
-        Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new NotFoundException("Событие не найдено с id = " + eventId));
+        Event event = validateEventExist(eventId);
         if (!event.getInitiator().equals(user))
             throw new ValidationException("Пользователь с id = " + userId + " не является инициатором события с id = " + eventId);
         Collection<Request> requests = requestRepository.findAllByEventId_IdAndIdIn(eventId,
@@ -445,12 +376,17 @@ public class EventServiceImpl implements EventService {
                 () -> new NotFoundException("Пользователя с id = " + userId + " не существует"));
     }
 
+    private Event validateEventExist(Long eventId) {
+        return eventRepository.findById(eventId)
+                .orElseThrow(() -> new NotFoundException("События с id = " + eventId + " не существует"));
+    }
+
     private LocalDateTime parseDateTime(String dateTimeStr, LocalDateTime defaultIfNull) {
         if (dateTimeStr == null || dateTimeStr.isBlank()) {
             return defaultIfNull;
         }
         try {
-            return LocalDateTime.parse(dateTimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            return LocalDateTime.parse(dateTimeStr, Constants.DATE_TIME_FORMATTER);
         } catch (DateTimeParseException e) {
             throw new ValidationException("Неверный формат даты. Ожидается: yyyy-MM-dd HH:mm:ss");
         }
@@ -524,5 +460,42 @@ public class EventServiceImpl implements EventService {
             oldEvent = null;
         }
         return oldEvent;
+    }
+
+    private void validateEventDate(LocalDateTime eventDate, LocalDateTime minValidDate) {
+        if (eventDate != null && eventDate.isBefore(minValidDate)) {
+            throw new ValidationException("Дата события должна быть назначена через два часа");
+        }
+    }
+
+    private void updateEventViews(Event event, HttpServletRequest request) {
+        sendStat(request);
+
+        LocalDateTime statsStartDate = event.getPublishedOn();
+        if (statsStartDate == null) {
+            statsStartDate = event.getCreatedOn();
+        }
+        List<StatsDto> views = statsClient.getStats(
+                statsStartDate.format(Constants.DATE_TIME_FORMATTER),
+                LocalDateTime.now().format(Constants.DATE_TIME_FORMATTER),
+                List.of(request.getRequestURI()),
+                true);
+
+        long newViews;
+        if (views.isEmpty()) {
+            newViews = 1L;
+        } else {
+            newViews = views.get(0).getHits();
+        }
+        event.setViews(newViews);
+        eventRepository.save(event);
+    }
+
+    private Pageable createPageable(int from, int size, String sort) {
+        if (sort != null && !sort.isBlank()) {
+            String sortField = mapSortParameterToFieldName(sort);
+            return PageRequest.of(from, size, Sort.by(sortField).descending());
+        }
+        return PageRequest.of(from, size);
     }
 }

@@ -57,17 +57,11 @@ public class StatsClient {
         String fullUrl = builder.build().toUriString();
         log.info("URL для запроса: {}", fullUrl);
 
-       /* return restClient.get()
-                .uri(fullUrl)
-                .retrieve()
-                .body(new ParameterizedTypeReference<List<StatsDto>>() {
-                });*/
         List<StatsDto> stats = restClient.get()
                 .uri(fullUrl)
                 .retrieve()
                 .body(new ParameterizedTypeReference<List<StatsDto>>() {});
 
-        // Временное логирование для проверки формата URI
         log.info("=== Получены статистические данные ===");
         stats.forEach(stat -> log.info("URI: {}, Hits: {}", stat.getUri(), stat.getHits()));
         log.info("====================================");
