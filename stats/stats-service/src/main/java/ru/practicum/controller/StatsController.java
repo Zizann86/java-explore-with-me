@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import ru.practicum.HitDto;
 import ru.practicum.StatsDto;
@@ -20,6 +22,7 @@ import java.util.List;
 public class StatsController {
     private final StatsService statsService;
 
+    @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/hit")
     public HitDto createHit(@RequestBody @Valid HitDto hitDto) {
         log.info("Создание запроса {} в сервисе", hitDto);
@@ -27,6 +30,7 @@ public class StatsController {
     }
 
     @GetMapping("/stats")
+    @ResponseStatus(HttpStatus.OK)
     public Collection<StatsDto> getStats(
             @RequestParam @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") @NotNull String start,
             @RequestParam @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") @NotNull String end,

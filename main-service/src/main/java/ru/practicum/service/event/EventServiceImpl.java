@@ -51,8 +51,8 @@ public class EventServiceImpl implements EventService {
 
     @Override
     public EventFullDto save(Long userId, NewEventDto newEventDto) {
-        LocalDateTime createdOn = LocalDateTime.now().plusHours(2L);
-        validateEventDate(newEventDto.getEventDate(), LocalDateTime.now().plusHours(2L));
+        LocalDateTime createdOn = LocalDateTime.now();
+        validateEventDate(newEventDto.getEventDate(), LocalDateTime.now());
         User initiator = validateUserExist(userId);
         Event event = EventMapper.toEvent(newEventDto);
         Category category = categoryRepository.findById(newEventDto.getCategory()).orElseThrow(
@@ -81,13 +81,14 @@ public class EventServiceImpl implements EventService {
         if (!event.getState().equals(State.PUBLISHED)) {
             throw new NotFoundException("Событие с id = " + eventId + " не опубликовано");
         }
+        sendStat(request);
         updateEventViews(event, request);
         return EventMapper.toEventFullDto(event);
     }
 
     @Override
     public EventFullDto updateEventAdmin(Long eventId, UpdateEventAdminRequest updateEventAdminRequest) {
-        LocalDateTime validDate = LocalDateTime.now().plusHours(2L);
+        LocalDateTime validDate = LocalDateTime.now();
         validateEventDate(updateEventAdminRequest.getEventDate(), validDate);
         Event oldEvent = validateEventExist(eventId);
         if (updateEventAdminRequest.getStateAction() != null) {
@@ -114,7 +115,7 @@ public class EventServiceImpl implements EventService {
 
         LocalDateTime gotEventDate = updateEventAdminRequest.getEventDate();
         if (gotEventDate != null) {
-            validateEventDate(gotEventDate, LocalDateTime.now().plusHours(1));
+            validateEventDate(gotEventDate, LocalDateTime.now());
             eventForUpdate.setEventDate(updateEventAdminRequest.getEventDate());
             hasChanges = true;
         }
@@ -225,6 +226,9 @@ public class EventServiceImpl implements EventService {
         Pageable pageable = createPageable(from, size, sort);
         LocalDateTime start = parseDateTime(rangeStart, LocalDateTime.now());
         LocalDateTime end = parseDateTime(rangeEnd, null);
+        if (start == null) {
+            throw new ValidationException("Дата начала не может быть пустой");
+        }
 
         if (end != null && end.isBefore(start)) {
             throw new ValidationException("Дата окончания не может быть раньше даты начала");
@@ -264,7 +268,7 @@ public class EventServiceImpl implements EventService {
 
     @Override
     public EventFullDto updateEvent(Long eventId, Long userId, UpdateEventUserRequest updateEventUserRequest) {
-        LocalDateTime validDate = LocalDateTime.now().plusHours(2L);
+        LocalDateTime validDate = LocalDateTime.now();
         validateEventDate(updateEventUserRequest.getEventDate(), validDate);
         validateUserExist(userId);
         Event oldEvent = eventRepository.findByInitiatorIdAndId(userId, eventId).orElseThrow(
@@ -285,7 +289,7 @@ public class EventServiceImpl implements EventService {
         }
         LocalDateTime newDate = updateEventUserRequest.getEventDate();
         if (newDate != null) {
-            if (LocalDateTime.now().isBefore(newDate.plusHours(2))) {
+            if (LocalDateTime.now().isBefore(newDate)) {
                 throw new ConflictException("Поле должно содержать дату, которая еще не наступила.");
             }
             eventForUpdate.setEventDate(newDate);
@@ -469,7 +473,7 @@ public class EventServiceImpl implements EventService {
     }
 
     private void updateEventViews(Event event, HttpServletRequest request) {
-        sendStat(request);
+        //sendStat(request);
 
         LocalDateTime statsStartDate = event.getPublishedOn();
         if (statsStartDate == null) {
