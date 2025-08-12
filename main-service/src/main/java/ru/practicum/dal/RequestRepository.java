@@ -15,33 +15,34 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     List<Request> findAllByEventIdInAndStatus(List<Long> eventIds, RequestStatus status);
 
     @Query("""
-            SELECT r 
-            FROM Request r 
-            WHERE r.event.id = :eventId 
+            SELECT r
+            FROM Request r
+            WHERE r.event.id = :eventId
             AND r.id IN :requestIds
             """)
     List<Request> findRequestsByEventAndIds(Long eventId, List<Long> requestIds);
 
     @Query("""
-            SELECT r 
-            FROM Request r 
-            WHERE r.event.id = :eventId 
-            AND r.status = :status 
+            SELECT r
+            FROM Request r
+            WHERE r.event.id = :eventId
+            AND r.status = :status
             AND r.id IN :requestIds
             """)
     List<Request> findRequestsByEventStatusAndIds(Long eventId, RequestStatus status, List<Long> requestIds);
 
     @Query("""
-            SELECT r 
-            FROM Request r 
+            SELECT r
+            FROM Request r
             WHERE r.event.id = :eventId
             """)
     List<Request> findRequestsByEvent(Long eventId);
 
     @Query("""
-            SELECT r 
-            FROM Request r 
-            WHERE r.requester.id = :requesterId 
-            AND r.event.id = :eventId""")
+            SELECT r
+            FROM Request r
+            WHERE r.requester.id = :requesterId
+            AND r.event.id = :eventId
+            """)
     Optional<Request> findRequestByRequesterAndEvent(Long requesterId, Long eventId);
 }
