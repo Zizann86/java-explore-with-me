@@ -30,7 +30,7 @@ public class RequestServiceImpl implements RequestService {
 
     @Override
     public ParticipationRequestDto addRequest(Long userId, Long eventId) {
-        if (requestRepository.findByRequesterIdAndEventId(userId, eventId).isPresent()) {
+        if (requestRepository.findRequestByRequesterAndEvent(userId, eventId).isPresent()) {
             throw new ConflictException(String.format(
                     "Запрос от пользователя с id = %d на событие с id = %d уже существует",
                     userId, eventId

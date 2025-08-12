@@ -324,7 +324,7 @@ public class EventServiceImpl implements EventService {
         Event event = validateEventExist(eventId);
         if (!event.getInitiator().equals(user))
             throw new ValidationException("Пользователь с id = " + userId + " не является инициатором события с id = " + eventId);
-        Collection<Request> requests = requestRepository.findAllByEventId_IdAndIdIn(eventId,
+        Collection<Request> requests = requestRepository.findRequestsByEventAndIds(eventId,
                 request.getRequestIds());
         int limit = event.getParticipantLimit() - event.getConfirmedRequests().intValue();
         int confirmed = event.getConfirmedRequests().intValue();
@@ -352,12 +352,12 @@ public class EventServiceImpl implements EventService {
             event.setConfirmedRequests(confirmed);
         eventRepository.save(event);
         EventRequestStatusUpdateResult result = new EventRequestStatusUpdateResult();
-        result.setConfirmedRequests(requestRepository.findAllByEventId_IdAndStatusAndIdIn(eventId,
+        result.setConfirmedRequests(requestRepository.findRequestsByEventStatusAndIds(eventId,
                         RequestStatus.CONFIRMED,
                         request.getRequestIds()).stream()
                 .map(RequestMapper::toParticipationRequestDto)
                 .toList());
-        result.setRejectedRequests(requestRepository.findAllByEventId_IdAndStatusAndIdIn(eventId,
+        result.setRejectedRequests(requestRepository.findRequestsByEventStatusAndIds(eventId,
                         RequestStatus.REJECTED,
                         request.getRequestIds()).stream()
                 .map(RequestMapper::toParticipationRequestDto)
@@ -369,7 +369,7 @@ public class EventServiceImpl implements EventService {
     public Collection<ParticipationRequestDto> findAllRequestsByEventId(Long userId, Long eventId) {
         validateUserExist(userId);
         Collection<ParticipationRequestDto> result = new ArrayList<>();
-        result = requestRepository.findAllByEventId_Id(eventId).stream()
+        result = requestRepository.findRequestsByEvent(eventId).stream()
                 .map(RequestMapper::toParticipationRequestDto)
                 .toList();
         return result;
