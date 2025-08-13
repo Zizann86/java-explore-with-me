@@ -2,9 +2,11 @@ package ru.practicum.exception;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+
 
 @Slf4j
 @RestControllerAdvice
@@ -17,6 +19,16 @@ public class GlobalExceptionHandler {
         return ApiError.builder()
                 .errorCode(HttpStatus.BAD_REQUEST.value())
                 .description(e.getMessage())
+                .build();
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiError handleMissingParams(MissingServletRequestParameterException e) {
+        log.error("Отсутствует обязательный параметр запроса: {}", e.getMessage());
+        return ApiError.builder()
+                .errorCode(HttpStatus.BAD_REQUEST.value())
+                .description("Отсутствует обязательный параметр: " + e.getParameterName())
                 .build();
     }
 
