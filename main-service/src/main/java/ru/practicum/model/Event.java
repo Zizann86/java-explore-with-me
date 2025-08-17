@@ -5,6 +5,8 @@ import lombok.*;
 import ru.practicum.model.enums.State;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 
 @Getter
 @Setter
@@ -66,4 +68,7 @@ public class Event {
 
     @Column(name = "views")
     Long views;
+
+    @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<Comment> comments = new HashSet<>();
 }
