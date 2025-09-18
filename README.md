@@ -1,3 +1,69 @@
-# java-explore-with-me
-Template repository for ExploreWithMe project.
-https://github.com/Zizann86/java-explore-with-me/pull/3
+# ExploreWithMe
+
+---
+В рамках дипломного проекта разработанно приложение ExploreWithMe (англ. «исследуй со мной»).
+Оно позволит пользователям делиться информацией об интересных событиях
+и находить компанию для участия в них.
+
+### Технологический стек
+
+---
+* Backend
+
+  Язык: Java 11/17
+
+  Фреймворк: Spring Boot
+
+  Архитектура: Многомодульный Maven-проект
+
+  Модули:
+
+        main-service (основной сервис содержит всё необходимое для работы продукта;)
+
+        stats (сервис статистики хранит количество просмотров и позволит делать различные выборки для анализа работы приложения.)
+
+* База данных
+
+  СУБД: PostgreSQL
+
+  ORM: Spring Data JPA, Hibernate
+
+* Контейнеризация и развертывание
+
+  Контейнеризация: Docker
+
+  Оркестрация: Docker Compose
+
+* Инструменты и сборка
+
+  Сборка: Apache Maven
+
+  Контроль версий: Git
+
+  Хостинг кода: GitHub
+
+### Запуск проекта
+
+---
+
+Предварительные требования
+
+* Установленный Docker
+
+* Установленный Docker Compose
+
+Клонирование репозитория
+```bash
+git clone https://github.com/Zizann86/java-explore-with-me.git
+cd java-explore-with-me
+```
+
+Соберите проект
+```bash
+mvn clean package
+```
+
+Из корневой директории проекта выполните:
+```bash
+docker-compose up -d
+```
